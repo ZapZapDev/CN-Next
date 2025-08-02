@@ -3,7 +3,7 @@ dotenv.config();
 
 export const config = {
     port: process.env.PORT || 8080,
-    baseUrl: process.env.BASE_URL || 'https://zapzap666.xyz:8080',
+    baseUrl: process.env.BASE_URL || 'https://zapzap666.xyz',
 
     solana: {
         rpcUrl: process.env.SOLANA_RPC || 'https://api.mainnet-beta.solana.com'

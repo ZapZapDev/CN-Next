@@ -5,13 +5,15 @@ class StorageService {
         this.cleanup();
     }
 
-    createPayment(recipient, amount, token) {
+    createPayment(recipient, amount, token, label = null, message = null) {
         const paymentId = this._generatePaymentId();
         const payment = {
             id: paymentId,
             recipient,
             amount: parseFloat(amount),
             token,
+            label,
+            message,
             status: 'pending',
             createdAt: new Date(),
             expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
@@ -25,6 +27,8 @@ class StorageService {
             recipient,
             amount: payment.amount,
             token,
+            label,
+            message,
             expiresAt: payment.expiresAt
         });
         return payment;
@@ -47,7 +51,9 @@ class StorageService {
             id: payment.id,
             status: payment.status,
             amount: payment.amount,
-            token: payment.token
+            token: payment.token,
+            label: payment.label,
+            message: payment.message
         });
         return payment;
     }
@@ -69,6 +75,12 @@ class StorageService {
 
         console.log('Payment status updated successfully');
         return true;
+    }
+
+    getAllPayments() {
+        const payments = Array.from(this.payments.values());
+        console.log('Retrieved all payments, count:', payments.length);
+        return payments;
     }
 
     cleanup() {

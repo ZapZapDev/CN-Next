@@ -6,13 +6,13 @@ class PaymentController {
     async createPayment(req, res) {
         try {
             console.log('Creating payment with data:', req.body);
-            const { recipient, amount, token } = req.body;
+            const { recipient, amount, token, label, message } = req.body;
 
             if (!recipient || !amount || !token) {
                 console.log('Missing required fields:', { recipient: !!recipient, amount: !!amount, token: !!token });
                 return res.status(400).json({
                     success: false,
-                    error: 'Missing required fields'
+                    error: 'Missing required fields: recipient, amount, token'
                 });
             }
 
@@ -30,23 +30,24 @@ class PaymentController {
                 console.log('Token not supported:', token);
                 return res.status(400).json({
                     success: false,
-                    error: 'Token not supported'
+                    error: `Token ${token} not supported`
                 });
             }
 
             console.log('Creating payment in storage');
-            const payment = storageService.createPayment(recipient, amount, token);
+            const payment = storageService.createPayment(recipient, amount, token, label, message);
             console.log('Payment created:', payment.id);
 
-            console.log('Generating QR code');
-            const qrCode = await qrService.createPaymentQR(payment.id);
-            console.log('QR code generated successfully');
+            console.log('Generating Solana Pay QR code');
+            const qrCode = await qrService.createPaymentQR(payment.id, payment);
+            console.log('Solana Pay QR code generated successfully');
 
             const response = {
                 success: true,
                 data: {
                     ...payment,
-                    qr_code: qrCode
+                    qr_code: qrCode,
+                    solana_pay_url: qrService.createSolanaPayUrl(payment.id)
                 }
             };
 
@@ -63,58 +64,82 @@ class PaymentController {
         }
     }
 
+    // GET endpoint для Solana Pay - возвращает метаданные
     async getTransaction(req, res) {
         try {
             const { id } = req.params;
-            console.log('Getting transaction metadata for payment:', id);
+            console.log('Solana Pay GET request for payment:', id);
 
             const payment = storageService.getPayment(id);
 
             if (!payment) {
                 console.log('Payment not found:', id);
-                return res.status(404).json({ error: 'Payment not found' });
+                return res.status(404).json({
+                    error: 'Payment not found'
+                });
             }
 
             if (payment.status === 'expired') {
                 console.log('Payment expired:', id);
-                return res.status(410).json({ error: 'Payment expired' });
+                return res.status(410).json({
+                    error: 'Payment expired'
+                });
             }
 
-            console.log('Returning metadata for payment:', id);
+            const label = payment.label || `Pay ${payment.amount} ${payment.token}`;
+            const icon = "https://solana.com/src/img/branding/solanaLogoMark.svg";
+
+            console.log('Returning Solana Pay metadata for payment:', id);
             res.json({
-                label: `Pay ${payment.amount} ${payment.token}`,
-                icon: "https://solana.com/src/img/branding/solanaLogoMark.svg"
+                label,
+                icon
             });
 
         } catch (error) {
-            console.error('Get transaction error:', error.message);
-            res.status(500).json({ error: 'Internal server error' });
+            console.error('Solana Pay GET error:', error.message);
+            res.status(500).json({
+                error: 'Internal server error'
+            });
         }
     }
 
+    // POST endpoint для Solana Pay - создает и возвращает транзакцию
     async createTransaction(req, res) {
         try {
             const { id } = req.params;
             const { account } = req.body;
-            console.log('Creating transaction for payment:', id, 'payer:', account);
+            console.log('Solana Pay POST request for payment:', id, 'from account:', account);
 
             const payment = storageService.getPayment(id);
             if (!payment) {
                 console.log('Payment not found:', id);
-                return res.status(404).json({ error: 'Payment not found' });
+                return res.status(404).json({
+                    error: 'Payment not found'
+                });
             }
 
             if (payment.status === 'expired') {
                 console.log('Payment expired:', id);
-                return res.status(410).json({ error: 'Payment expired' });
+                return res.status(410).json({
+                    error: 'Payment expired'
+                });
+            }
+
+            if (!account) {
+                console.log('Missing account in request body');
+                return res.status(400).json({
+                    error: 'Missing account field'
+                });
             }
 
             if (!solanaService.validateAddress(account)) {
-                console.log('Invalid payer address:', account);
-                return res.status(400).json({ error: 'Invalid payer address' });
+                console.log('Invalid account address:', account);
+                return res.status(400).json({
+                    error: 'Invalid account address'
+                });
             }
 
-            console.log('Creating Solana transaction');
+            console.log('Creating Solana transaction for Solana Pay');
             const transaction = await solanaService.createTransaction(
                 account,
                 payment.recipient,
@@ -122,23 +147,27 @@ class PaymentController {
                 payment.token
             );
 
+            // Сериализуем транзакцию для кошелька
             const serializedTransaction = transaction.serialize({
                 requireAllSignatures: false,
                 verifySignatures: false
             });
 
-            console.log('Transaction created successfully, size:', serializedTransaction.length, 'bytes');
+            console.log('Transaction created for Solana Pay, size:', serializedTransaction.length, 'bytes');
 
+            const message = payment.message || `Payment of ${payment.amount} ${payment.token}`;
+
+            // Возвращаем в формате Solana Pay
             res.json({
                 transaction: serializedTransaction.toString('base64'),
-                message: `Pay ${payment.amount} ${payment.token}`
+                message
             });
 
         } catch (error) {
-            console.error('Create transaction error:', error.message);
+            console.error('Solana Pay POST error:', error.message);
             console.error('Stack:', error.stack);
             res.status(500).json({
-                error: 'Transaction creation failed'
+                error: 'Failed to create transaction'
             });
         }
     }
@@ -146,8 +175,7 @@ class PaymentController {
     async verifyPayment(req, res) {
         try {
             const { id } = req.params;
-            const { signature } = req.body;
-            console.log('Verifying payment:', id, 'signature:', signature);
+            console.log('Checking payment status for:', id);
 
             const payment = storageService.getPayment(id);
             if (!payment) {
@@ -158,17 +186,50 @@ class PaymentController {
                 });
             }
 
-            console.log('Verifying transaction on blockchain');
-            const verification = await solanaService.verifyTransaction(signature);
-
-            if (verification.success) {
-                console.log('Payment verified successfully:', id);
-                storageService.updatePaymentStatus(id, 'completed', signature);
-            } else {
-                console.log('Payment verification failed:', id, verification.error);
+            // Если платеж уже подтвержден, возвращаем результат
+            if (payment.signature && payment.status === 'completed') {
+                console.log('Payment already completed:', id, payment.signature);
+                return res.json({
+                    success: true,
+                    signature: payment.signature,
+                    blockTime: payment.verifiedAt,
+                    status: 'completed'
+                });
             }
 
-            res.json(verification);
+            // Проверяем блокчейн на предмет входящих транзакций
+            console.log('Scanning blockchain for incoming transactions...');
+            const sinceTime = Math.floor(payment.createdAt.getTime() / 1000);
+
+            const blockchainCheck = await solanaService.checkIncomingTransactions(
+                payment.recipient,
+                payment.amount,
+                payment.token,
+                sinceTime
+            );
+
+            if (blockchainCheck.success) {
+                console.log('✅ Payment found on blockchain:', id, blockchainCheck.signature);
+
+                // Обновляем статус платежа
+                storageService.updatePaymentStatus(id, 'completed', blockchainCheck.signature);
+
+                return res.json({
+                    success: true,
+                    signature: blockchainCheck.signature,
+                    blockTime: blockchainCheck.blockTime,
+                    slot: blockchainCheck.slot,
+                    status: 'completed'
+                });
+            }
+
+            // Платеж еще не найден
+            console.log('Payment not found on blockchain yet:', id);
+            return res.json({
+                success: false,
+                status: payment.status,
+                message: 'Payment not confirmed yet'
+            });
 
         } catch (error) {
             console.error('Verify payment error:', error.message);
