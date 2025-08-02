@@ -2,32 +2,18 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-    // Сервер
-    server: {
-        port: process.env.PORT || 3001,
-        host: process.env.HOST || 'localhost',
-        baseUrl: process.env.BASE_URL || 'https://37958ba1d6c8.ngrok-free.app'
-    },
+    port: process.env.PORT || 8080,
+    baseUrl: process.env.BASE_URL || 'https://zapzap666.xyz:8080',
 
-    // Solana
     solana: {
-        rpcUrl: process.env.SOLANA_RPC || 'https://api.mainnet-beta.solana.com',
-        commitment: 'confirmed'
+        rpcUrl: process.env.SOLANA_RPC || 'https://api.mainnet-beta.solana.com'
     },
 
-    // Комиссии
-    fees: {
-        wallet: process.env.FEE_WALLET || '9E9ME8Xjrnnz5tyLqPWUbXVbPjXusEp9NdjKeugDjW5t',
-        amount: parseFloat(process.env.FEE_AMOUNT) || 1.0,
-        token: process.env.FEE_TOKEN || 'USDC'
-    },
-
-    // Поддерживаемые токены
     tokens: {
         SOL: {
             symbol: 'SOL',
             decimals: 9,
-            mint: null // Native SOL
+            mint: null
         },
         USDC: {
             symbol: 'USDC',
@@ -41,16 +27,3 @@ export const config = {
         }
     }
 };
-
-// Валидация конфигурации
-export function validateConfig() {
-    if (!config.fees.wallet || config.fees.wallet === 'YOUR_WALLET_HERE') {
-        throw new Error('❌ Please set FEE_WALLET in .env file');
-    }
-
-    if (config.fees.amount <= 0) {
-        throw new Error('❌ Fee amount must be positive');
-    }
-
-    console.log('✅ Configuration validated');
-}

@@ -10,17 +10,22 @@
     "test": "node test.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "@solana/web3.js": "^1.87.6",
     "@solana/spl-token": "^0.3.9",
-    "qrcode": "^1.5.3",
-    "dotenv": "^16.3.1"
+    "@solana/web3.js": "^1.87.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.3"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.1.10"
   },
-  "keywords": ["solana", "payment", "crypto", "multichain"],
+  "keywords": [
+    "solana",
+    "payment",
+    "crypto",
+    "multichain"
+  ],
   "author": "CryptoNow",
   "license": "MIT"
 }

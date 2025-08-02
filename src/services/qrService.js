@@ -2,19 +2,15 @@ import QRCode from 'qrcode';
 import { config } from '../config/index.js';
 
 class QRService {
-    /**
-     * Создать Solana Pay URL
-     */
     createSolanaPayUrl(paymentId) {
-        const baseUrl = config.server.baseUrl;
-        return `solana:${baseUrl}/api/payment/${paymentId}/transaction`;
+        const url = `${config.baseUrl}/api/payment/${paymentId}/transaction`;
+        console.log('Created Solana Pay URL:', url);
+        return url;
     }
 
-    /**
-     * Генерировать QR код
-     */
-    async generateQR(data, options = {}) {
+    async generateQR(data) {
         try {
+            console.log('Generating QR code for URL:', data);
             const qrOptions = {
                 type: 'image/png',
                 quality: 0.92,
@@ -23,38 +19,22 @@ class QRService {
                     dark: '#000000',
                     light: '#FFFFFF'
                 },
-                width: 256,
-                ...options
+                width: 256
             };
 
-            const qrCodeDataUrl = await QRCode.toDataURL(data, qrOptions);
-            console.log(`✅ QR code generated for: ${data.substring(0, 50)}...`);
-            return qrCodeDataUrl;
-
+            const qrCode = await QRCode.toDataURL(data, qrOptions);
+            console.log('QR code generated successfully, length:', qrCode.length);
+            return qrCode;
         } catch (error) {
-            console.error('❌ Error generating QR code:', error);
+            console.error('QR generation failed:', error.message);
             throw new Error('Failed to generate QR code');
         }
     }
 
-    /**
-     * Создать QR код для платежа
-     */
-    async createPaymentQR(paymentId, options = {}) {
+    async createPaymentQR(paymentId) {
+        console.log('Creating payment QR for ID:', paymentId);
         const solanaPayUrl = this.createSolanaPayUrl(paymentId);
-        return this.generateQR(solanaPayUrl, options);
-    }
-
-    /**
-     * Валидировать URL для QR кода
-     */
-    validateUrl(url) {
-        try {
-            new URL(url);
-            return true;
-        } catch {
-            return false;
-        }
+        return this.generateQR(solanaPayUrl);
     }
 }
 
