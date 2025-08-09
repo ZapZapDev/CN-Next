@@ -2,7 +2,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
-    port: process.env.PORT || 8080,
+    port: process.env.PORT || 3001,
     baseUrl: process.env.BASE_URL || 'https://zapzap666.xyz',
 
     solana: {
