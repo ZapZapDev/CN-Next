@@ -3,101 +3,273 @@ import {
     PublicKey,
     Transaction,
     SystemProgram,
-    LAMPORTS_PER_SOL
+    LAMPORTS_PER_SOL,
+    ComputeBudgetProgram
 } from '@solana/web3.js';
 import {
     createTransferInstruction,
     getAssociatedTokenAddress,
-    createAssociatedTokenAccountInstruction
+    createAssociatedTokenAccountInstruction,
+    TOKEN_PROGRAM_ID
 } from '@solana/spl-token';
 import { config } from '../config/index.js';
 
 class SolanaService {
     constructor() {
         this.connection = new Connection(config.solana.rpcUrl, 'confirmed');
+        console.log('🔗 Connected to Solana RPC:', config.solana.rpcUrl);
     }
 
-    async createTransaction(payerAddress, recipientAddress, amount, token) {
-        console.log('Creating transaction:', { payerAddress, recipientAddress, amount, token });
+    /**
+     * Создает транзакцию с двумя USDC переводами:
+     * 1. Основной платеж
+     * 2. Комиссия CryptoNow
+     */
+    async createDualUSDCTransaction(payerAddress, merchantAddress, amount) {
+        console.log('💰 Creating dual USDC transaction:', {
+            payer: payerAddress,
+            merchant: merchantAddress,
+            amount: amount,
+            fee: config.cryptonow.feeAmount,
+            feeWallet: config.cryptonow.feeWallet
+        });
 
         const payer = new PublicKey(payerAddress);
-        const recipient = new PublicKey(recipientAddress);
+        const merchant = new PublicKey(merchantAddress);
+        const feeWallet = new PublicKey(config.cryptonow.feeWallet);
+        const usdcMint = new PublicKey(config.tokens.USDC.mint);
+
         const transaction = new Transaction();
 
-        if (token === 'SOL') {
-            const lamports = Math.floor(amount * LAMPORTS_PER_SOL);
-            console.log('Adding SOL transfer:', lamports, 'lamports');
+        // Добавляем compute budget для стабильности
+        transaction.add(
+            ComputeBudgetProgram.setComputeUnitLimit({
+                units: 400_000,
+            })
+        );
 
+        // Получаем Associated Token Accounts
+        const payerUsdcAccount = await getAssociatedTokenAddress(usdcMint, payer);
+        const merchantUsdcAccount = await getAssociatedTokenAddress(usdcMint, merchant);
+        const feeUsdcAccount = await getAssociatedTokenAddress(usdcMint, feeWallet);
+
+        console.log('🏦 Token accounts:', {
+            payer: payerUsdcAccount.toBase58(),
+            merchant: merchantUsdcAccount.toBase58(),
+            fee: feeUsdcAccount.toBase58()
+        });
+
+        // Проверяем и создаем ATA для мерчанта если нужно
+        const merchantAccountInfo = await this.connection.getAccountInfo(merchantUsdcAccount);
+        if (!merchantAccountInfo) {
+            console.log('🏗️ Creating ATA for merchant');
             transaction.add(
-                SystemProgram.transfer({
-                    fromPubkey: payer,
-                    toPubkey: recipient,
-                    lamports
-                })
-            );
-        } else {
-            const tokenConfig = config.tokens[token];
-            const mint = new PublicKey(tokenConfig.mint);
-            const tokenAmount = Math.floor(amount * Math.pow(10, tokenConfig.decimals));
-
-            console.log('Adding SPL token transfer:', tokenAmount, 'tokens');
-
-            const payerTokenAccount = await getAssociatedTokenAddress(mint, payer);
-            const recipientTokenAccount = await getAssociatedTokenAddress(mint, recipient);
-
-            // Check if recipient ATA exists
-            try {
-                const recipientAccountInfo = await this.connection.getAccountInfo(recipientTokenAccount);
-                if (!recipientAccountInfo) {
-                    console.log('Creating ATA for recipient');
-                    transaction.add(
-                        createAssociatedTokenAccountInstruction(
-                            payer,
-                            recipientTokenAccount,
-                            recipient,
-                            mint
-                        )
-                    );
-                }
-            } catch (error) {
-                console.log('Error checking ATA, adding creation instruction anyway');
-                transaction.add(
-                    createAssociatedTokenAccountInstruction(
-                        payer,
-                        recipientTokenAccount,
-                        recipient,
-                        mint
-                    )
-                );
-            }
-
-            transaction.add(
-                createTransferInstruction(
-                    payerTokenAccount,
-                    recipientTokenAccount,
-                    payer,
-                    tokenAmount
+                createAssociatedTokenAccountInstruction(
+                    payer, // payer
+                    merchantUsdcAccount, // ata
+                    merchant, // owner
+                    usdcMint // mint
                 )
             );
         }
 
-        // КРИТИЧНО: получаем свежий blockhash
-        console.log('Getting recent blockhash...');
-        const { blockhash } = await this.connection.getLatestBlockhash();
+        // Проверяем и создаем ATA для кошелька комиссий если нужно
+        const feeAccountInfo = await this.connection.getAccountInfo(feeUsdcAccount);
+        if (!feeAccountInfo) {
+            console.log('🏗️ Creating ATA for fee wallet');
+            transaction.add(
+                createAssociatedTokenAccountInstruction(
+                    payer, // payer
+                    feeUsdcAccount, // ata
+                    feeWallet, // owner
+                    usdcMint // mint
+                )
+            );
+        }
+
+        // Конвертируем суммы в минимальные единицы (6 decimals для USDC)
+        const merchantAmountLamports = Math.floor(amount * Math.pow(10, config.tokens.USDC.decimals));
+        const feeAmountLamports = Math.floor(config.cryptonow.feeAmount * Math.pow(10, config.tokens.USDC.decimals));
+
+        console.log('💵 Transfer amounts:', {
+            merchantAmount: `${merchantAmountLamports} lamports (${amount} USDC)`,
+            feeAmount: `${feeAmountLamports} lamports (${config.cryptonow.feeAmount} USDC)`
+        });
+
+        // ИНСТРУКЦИЯ 1: Основной платеж мерчанту
+        transaction.add(
+            createTransferInstruction(
+                payerUsdcAccount, // from
+                merchantUsdcAccount, // to
+                payer, // owner
+                merchantAmountLamports, // amount
+                [], // multiSigners
+                TOKEN_PROGRAM_ID // programId
+            )
+        );
+
+        // ИНСТРУКЦИЯ 2: Комиссия CryptoNow
+        transaction.add(
+            createTransferInstruction(
+                payerUsdcAccount, // from
+                feeUsdcAccount, // to
+                payer, // owner
+                feeAmountLamports, // amount
+                [], // multiSigners
+                TOKEN_PROGRAM_ID // programId
+            )
+        );
+
+        // Получаем свежий blockhash
+        console.log('🔄 Getting recent blockhash...');
+        const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash('confirmed');
         transaction.recentBlockhash = blockhash;
         transaction.feePayer = payer;
 
-        console.log('Transaction created with blockhash:', blockhash);
-        console.log('Instructions count:', transaction.instructions.length);
-        console.log('Fee payer:', payer.toBase58());
+        console.log('✅ Dual USDC transaction created:', {
+            instructions: transaction.instructions.length,
+            blockhash: blockhash.slice(0, 8) + '...',
+            lastValidBlockHeight
+        });
 
         return transaction;
     }
 
+    /**
+     * Создает транзакцию для других токенов (SOL, USDT)
+     */
+    async createTransaction(payerAddress, merchantAddress, amount, token) {
+        if (token === 'USDC') {
+            return this.createDualUSDCTransaction(payerAddress, merchantAddress, amount);
+        }
+
+        console.log('💰 Creating transaction for token:', token);
+
+        const payer = new PublicKey(payerAddress);
+        const merchant = new PublicKey(merchantAddress);
+        const feeWallet = new PublicKey(config.cryptonow.feeWallet);
+        const transaction = new Transaction();
+
+        // Добавляем compute budget
+        transaction.add(
+            ComputeBudgetProgram.setComputeUnitLimit({
+                units: 400_000,
+            })
+        );
+
+        if (token === 'SOL') {
+            // SOL переводы
+            const merchantLamports = Math.floor(amount * LAMPORTS_PER_SOL);
+            const feeLamports = Math.floor(0.001 * LAMPORTS_PER_SOL); // 0.001 SOL комиссия
+
+            transaction.add(
+                SystemProgram.transfer({
+                    fromPubkey: payer,
+                    toPubkey: merchant,
+                    lamports: merchantLamports
+                })
+            );
+
+            transaction.add(
+                SystemProgram.transfer({
+                    fromPubkey: payer,
+                    toPubkey: feeWallet,
+                    lamports: feeLamports
+                })
+            );
+
+        } else {
+            // SPL токены (USDT и другие)
+            const tokenConfig = config.tokens[token];
+            if (!tokenConfig) {
+                throw new Error(`Token ${token} not supported`);
+            }
+
+            const tokenMint = new PublicKey(tokenConfig.mint);
+            const payerTokenAccount = await getAssociatedTokenAddress(tokenMint, payer);
+            const merchantTokenAccount = await getAssociatedTokenAddress(tokenMint, merchant);
+            const feeTokenAccount = await getAssociatedTokenAddress(tokenMint, feeWallet);
+
+            // Создаем ATA если нужно (аналогично USDC)
+            const merchantAccountInfo = await this.connection.getAccountInfo(merchantTokenAccount);
+            if (!merchantAccountInfo) {
+                transaction.add(
+                    createAssociatedTokenAccountInstruction(payer, merchantTokenAccount, merchant, tokenMint)
+                );
+            }
+
+            const feeAccountInfo = await this.connection.getAccountInfo(feeTokenAccount);
+            if (!feeAccountInfo) {
+                transaction.add(
+                    createAssociatedTokenAccountInstruction(payer, feeTokenAccount, feeWallet, tokenMint)
+                );
+            }
+
+            // Переводы токенов
+            const merchantAmount = Math.floor(amount * Math.pow(10, tokenConfig.decimals));
+            const feeAmount = Math.floor(config.cryptonow.feeAmount * Math.pow(10, tokenConfig.decimals));
+
+            transaction.add(
+                createTransferInstruction(payerTokenAccount, merchantTokenAccount, payer, merchantAmount)
+            );
+
+            transaction.add(
+                createTransferInstruction(payerTokenAccount, feeTokenAccount, payer, feeAmount)
+            );
+        }
+
+        // Устанавливаем blockhash и fee payer
+        const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+        transaction.recentBlockhash = blockhash;
+        transaction.feePayer = payer;
+
+        console.log(`✅ ${token} transaction created with ${transaction.instructions.length} instructions`);
+        return transaction;
+    }
+
+    /**
+     * Проверяет валидность адреса Solana
+     */
+    validateAddress(address) {
+        try {
+            new PublicKey(address);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Проверяет поддержку токена
+     */
+    isTokenSupported(token) {
+        return token in config.tokens;
+    }
+
+    /**
+     * Возвращает информацию о токене
+     */
+    getTokenInfo(token) {
+        return config.tokens[token] || null;
+    }
+
+    /**
+     * Возвращает список поддерживаемых токенов
+     */
+    getSupportedTokens() {
+        return Object.keys(config.tokens);
+    }
+
+    /**
+     * Проверяет транзакцию в блокчейне
+     */
     async verifyTransaction(signature) {
         try {
+            console.log('🔍 Verifying transaction:', signature);
+
             const txInfo = await this.connection.getTransaction(signature, {
-                commitment: 'confirmed'
+                commitment: 'confirmed',
+                maxSupportedTransactionVersion: 0
             });
 
             if (!txInfo) {
@@ -110,18 +282,22 @@ class SolanaService {
             if (txInfo.meta?.err) {
                 return {
                     success: false,
-                    error: 'Transaction failed'
+                    error: 'Transaction failed',
+                    details: txInfo.meta.err
                 };
             }
 
+            console.log('✅ Transaction verified successfully');
             return {
                 success: true,
                 signature,
                 blockTime: txInfo.blockTime,
-                slot: txInfo.slot
+                slot: txInfo.slot,
+                fee: txInfo.meta?.fee || 0
             };
 
         } catch (error) {
+            console.error('❌ Transaction verification failed:', error);
             return {
                 success: false,
                 error: error.message
@@ -129,156 +305,28 @@ class SolanaService {
         }
     }
 
-    // Новая функция: проверка входящих транзакций для адреса
-    async checkIncomingTransactions(recipientAddress, expectedAmount, token, sinceTime) {
+    /**
+     * Возвращает баланс USDC кошелька
+     */
+    async getUSDCBalance(walletAddress) {
         try {
-            console.log('Checking incoming transactions for:', recipientAddress, 'amount:', expectedAmount, token);
+            const wallet = new PublicKey(walletAddress);
+            const usdcMint = new PublicKey(config.tokens.USDC.mint);
+            const usdcAccount = await getAssociatedTokenAddress(usdcMint, wallet);
 
-            const publicKey = new PublicKey(recipientAddress);
-
-            // Получаем подтвержденные транзакции
-            const signatures = await this.connection.getSignaturesForAddress(
-                publicKey,
-                {
-                    limit: 20,
-                    commitment: 'confirmed'
-                }
-            );
-
-            console.log(`Found ${signatures.length} recent transactions`);
-
-            for (const sig of signatures) {
-                // Проверяем только транзакции после создания платежа
-                if (sig.blockTime && sig.blockTime < sinceTime) {
-                    continue;
-                }
-
-                console.log('Checking transaction:', sig.signature);
-
-                const txInfo = await this.connection.getTransaction(sig.signature, {
-                    commitment: 'confirmed'
-                });
-
-                if (!txInfo || txInfo.meta?.err) {
-                    continue;
-                }
-
-                const isMatch = await this.checkTransactionMatch(
-                    txInfo,
-                    recipientAddress,
-                    expectedAmount,
-                    token
-                );
-
-                if (isMatch) {
-                    console.log('✅ MATCHING TRANSACTION FOUND:', sig.signature);
-                    return {
-                        success: true,
-                        signature: sig.signature,
-                        blockTime: sig.blockTime,
-                        slot: sig.slot
-                    };
-                }
-            }
-
-            console.log('No matching transactions found');
+            const balance = await this.connection.getTokenAccountBalance(usdcAccount);
             return {
-                success: false,
-                error: 'No matching transaction found'
+                success: true,
+                balance: parseFloat(balance.value.uiAmountString || '0'),
+                raw: balance.value.amount
             };
-
         } catch (error) {
-            console.error('Error checking incoming transactions:', error);
             return {
                 success: false,
+                balance: 0,
                 error: error.message
             };
         }
-    }
-
-    // Проверяем соответствует ли транзакция ожидаемому платежу
-    async checkTransactionMatch(txInfo, recipientAddress, expectedAmount, token) {
-        try {
-            const recipient = new PublicKey(recipientAddress);
-
-            if (token === 'SOL') {
-                // Проверяем SOL транзакции
-                const expectedLamports = Math.floor(expectedAmount * LAMPORTS_PER_SOL);
-
-                // Проверяем изменения баланса
-                const postBalances = txInfo.meta.postBalances;
-                const preBalances = txInfo.meta.preBalances;
-
-                for (let i = 0; i < txInfo.transaction.message.accountKeys.length; i++) {
-                    const accountKey = txInfo.transaction.message.accountKeys[i];
-
-                    if (accountKey.equals(recipient)) {
-                        const balanceChange = postBalances[i] - preBalances[i];
-                        console.log(`SOL balance change for recipient: ${balanceChange} lamports (expected: ${expectedLamports})`);
-
-                        // Проверяем с небольшой погрешностью (±1%)
-                        const tolerance = Math.max(1000, expectedLamports * 0.01);
-                        if (Math.abs(balanceChange - expectedLamports) <= tolerance) {
-                            return true;
-                        }
-                    }
-                }
-            } else {
-                // Проверяем SPL токены
-                const tokenConfig = config.tokens[token];
-                const mint = new PublicKey(tokenConfig.mint);
-                const expectedTokenAmount = Math.floor(expectedAmount * Math.pow(10, tokenConfig.decimals));
-
-                // Проверяем изменения токен аккаунтов
-                const tokenBalances = txInfo.meta.postTokenBalances || [];
-                const preTokenBalances = txInfo.meta.preTokenBalances || [];
-
-                for (const postBalance of tokenBalances) {
-                    if (postBalance.mint === mint.toBase58() && postBalance.owner === recipient.toBase58()) {
-                        const preBalance = preTokenBalances.find(
-                            pb => pb.accountIndex === postBalance.accountIndex
-                        );
-
-                        const preAmount = preBalance ? parseInt(preBalance.uiTokenAmount.amount) : 0;
-                        const postAmount = parseInt(postBalance.uiTokenAmount.amount);
-                        const tokenChange = postAmount - preAmount;
-
-                        console.log(`${token} balance change for recipient: ${tokenChange} (expected: ${expectedTokenAmount})`);
-
-                        // Проверяем точное соответствие для токенов
-                        if (tokenChange === expectedTokenAmount) {
-                            return true;
-                        }
-                    }
-                }
-            }
-
-            return false;
-        } catch (error) {
-            console.error('Error checking transaction match:', error);
-            return false;
-        }
-    }
-
-    validateAddress(address) {
-        try {
-            new PublicKey(address);
-            return true;
-        } catch {
-            return false;
-        }
-    }
-
-    isTokenSupported(token) {
-        return token in config.tokens;
-    }
-
-    getTokenInfo(token) {
-        return config.tokens[token] || null;
-    }
-
-    getSupportedTokens() {
-        return Object.keys(config.tokens);
     }
 }
 

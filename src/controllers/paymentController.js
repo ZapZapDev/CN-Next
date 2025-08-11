@@ -1,62 +1,100 @@
 import solanaService from '../services/solanaService.js';
 import qrService from '../services/qrService.js';
-import storageService from '../services/storageService.js';
+import storageService from '../services/storageService.js'; // Ваш существующий файл
+import { config } from '../config/index.js';
 
 class PaymentController {
+    /**
+     * Создает новый платеж и возвращает Solana Pay URL
+     */
     async createPayment(req, res) {
         try {
-            console.log('Creating payment with data:', req.body);
-            const { recipient, amount, token, label, message } = req.body;
+            console.log('🛒 Creating new payment:', req.body);
 
-            if (!recipient || !amount || !token) {
-                console.log('Missing required fields:', { recipient: !!recipient, amount: !!amount, token: !!token });
+            const {
+                recipient,
+                amount,
+                token = 'USDC',
+                label,
+                message,
+                orderId
+            } = req.body;
+
+            // Валидация входных данных
+            if (!recipient || !amount) {
                 return res.status(400).json({
                     success: false,
-                    error: 'Missing required fields: recipient, amount, token'
+                    error: 'Missing required fields: recipient, amount'
                 });
             }
 
-            console.log('Validating address:', recipient);
             if (!solanaService.validateAddress(recipient)) {
-                console.log('Invalid recipient address');
                 return res.status(400).json({
                     success: false,
                     error: 'Invalid recipient address'
                 });
             }
 
-            console.log('Checking token support:', token);
             if (!solanaService.isTokenSupported(token)) {
-                console.log('Token not supported:', token);
                 return res.status(400).json({
                     success: false,
-                    error: `Token ${token} not supported`
+                    error: `Token ${token} not supported. Supported: ${solanaService.getSupportedTokens().join(', ')}`
                 });
             }
 
-            console.log('Creating payment in storage');
-            const payment = storageService.createPayment(recipient, amount, token, label, message);
-            console.log('Payment created:', payment.id);
+            const paymentAmount = parseFloat(amount);
+            if (paymentAmount <= 0 || paymentAmount > config.payment.maxAmount) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Amount must be between ${config.payment.minAmount} and ${config.payment.maxAmount}`
+                });
+            }
 
-            console.log('Generating Solana Pay QR code');
-            const qrCode = await qrService.createPaymentQR(payment.id, payment);
-            console.log('Solana Pay QR code generated successfully');
+            // Создаем платеж используя ВАШ storageService
+            const payment = storageService.createPayment(
+                recipient,
+                paymentAmount,
+                token,
+                label || `CryptoNow: ${paymentAmount} ${token} + ${config.cryptonow.feeAmount} ${token} fee`,
+                message || `Payment of ${paymentAmount} ${token} with ${config.cryptonow.feeAmount} ${token} CryptoNow fee`
+            );
 
-            const response = {
+            // Создаем Solana Pay URL
+            const solanaPayUrl = `${config.baseUrl}/api/payment/${payment.id}/transaction`;
+
+            console.log('✅ Payment created:', {
+                id: payment.id,
+                recipient: recipient.slice(0, 8) + '...',
+                amount: `${paymentAmount} ${token}`,
+                fee: `${config.cryptonow.feeAmount} ${token}`,
+                url: solanaPayUrl
+            });
+
+            res.json({
                 success: true,
                 data: {
-                    ...payment,
-                    qr_code: qrCode,
-                    solana_pay_url: qrService.createSolanaPayUrl(payment.id)
+                    id: payment.id,
+                    merchant: recipient,
+                    amount: paymentAmount,
+                    token,
+                    label: payment.label,
+                    message: payment.message,
+                    solana_pay_url: solanaPayUrl,
+                    qr_data: solanaPayUrl,
+                    fee_info: {
+                        amount: config.cryptonow.feeAmount,
+                        wallet: config.cryptonow.feeWallet,
+                        token
+                    },
+                    status: payment.status,
+                    createdAt: payment.createdAt,
+                    expiresAt: payment.expiresAt,
+                    orderId: orderId || null
                 }
-            };
-
-            console.log('Sending response for payment:', payment.id);
-            res.json(response);
+            });
 
         } catch (error) {
-            console.error('Create payment error:', error.message);
-            console.error('Stack:', error.stack);
+            console.error('❌ Create payment error:', error);
             res.status(500).json({
                 success: false,
                 error: 'Internal server error'
@@ -64,82 +102,93 @@ class PaymentController {
         }
     }
 
-    // GET endpoint для Solana Pay - возвращает метаданные
+    /**
+     * GET /api/payment/:id/transaction
+     * Solana Pay: возвращает метаданные платежа
+     */
     async getTransaction(req, res) {
         try {
             const { id } = req.params;
-            console.log('Solana Pay GET request for payment:', id);
+            console.log('📱 Solana Pay GET request for payment:', id);
 
             const payment = storageService.getPayment(id);
-
             if (!payment) {
-                console.log('Payment not found:', id);
+                console.log('❌ Payment not found:', id);
                 return res.status(404).json({
                     error: 'Payment not found'
                 });
             }
 
             if (payment.status === 'expired') {
-                console.log('Payment expired:', id);
+                console.log('⏰ Payment expired:', id);
                 return res.status(410).json({
                     error: 'Payment expired'
                 });
             }
 
-            const label = payment.label || `Pay ${payment.amount} ${payment.token}`;
-            const icon = "https://solana.com/src/img/branding/solanaLogoMark.svg";
+            const response = {
+                label: payment.label,
+                icon: config.cryptonow.icon || "https://solana.com/src/img/branding/solanaLogoMark.svg"
+            };
 
-            console.log('Returning Solana Pay metadata for payment:', id);
-            res.json({
-                label,
-                icon
-            });
+            console.log('📋 Returning payment metadata:', response);
+            res.json(response);
 
         } catch (error) {
-            console.error('Solana Pay GET error:', error.message);
+            console.error('❌ Get transaction error:', error);
             res.status(500).json({
                 error: 'Internal server error'
             });
         }
     }
 
-    // POST endpoint для Solana Pay - создает и возвращает транзакцию
+    /**
+     * POST /api/payment/:id/transaction
+     * Solana Pay: создает и возвращает транзакцию
+     */
     async createTransaction(req, res) {
         try {
             const { id } = req.params;
             const { account } = req.body;
-            console.log('Solana Pay POST request for payment:', id, 'from account:', account);
+
+            console.log('💳 Solana Pay POST transaction request:', {
+                paymentId: id,
+                account: account?.slice(0, 8) + '...'
+            });
 
             const payment = storageService.getPayment(id);
             if (!payment) {
-                console.log('Payment not found:', id);
                 return res.status(404).json({
                     error: 'Payment not found'
                 });
             }
 
             if (payment.status === 'expired') {
-                console.log('Payment expired:', id);
                 return res.status(410).json({
                     error: 'Payment expired'
                 });
             }
 
+            if (payment.status === 'completed') {
+                return res.status(409).json({
+                    error: 'Payment already completed'
+                });
+            }
+
             if (!account) {
-                console.log('Missing account in request body');
                 return res.status(400).json({
                     error: 'Missing account field'
                 });
             }
 
             if (!solanaService.validateAddress(account)) {
-                console.log('Invalid account address:', account);
                 return res.status(400).json({
                     error: 'Invalid account address'
                 });
             }
 
-            console.log('Creating Solana transaction for Solana Pay');
+            // Создаем DUAL транзакцию
+            console.log('🔨 Creating DUAL Solana transaction...');
             const transaction = await solanaService.createTransaction(
                 account,
                 payment.recipient,
@@ -147,95 +196,136 @@ class PaymentController {
                 payment.token
             );
 
-            // Сериализуем транзакцию для кошелька
+            // Сериализуем для кошелька
             const serializedTransaction = transaction.serialize({
                 requireAllSignatures: false,
                 verifySignatures: false
             });
 
-            console.log('Transaction created for Solana Pay, size:', serializedTransaction.length, 'bytes');
+            // Обновляем статус платежа используя ВАШ storageService
+            storageService.updatePaymentStatus(id, 'pending', account);
 
-            const message = payment.message || `Payment of ${payment.amount} ${payment.token}`;
-
-            // Возвращаем в формате Solana Pay
-            res.json({
+            const response = {
                 transaction: serializedTransaction.toString('base64'),
-                message
+                message: payment.message
+            };
+
+            console.log('✅ DUAL Transaction created and serialized:', {
+                paymentId: id,
+                size: `${serializedTransaction.length} bytes`,
+                instructions: transaction.instructions.length,
+                payer: account.slice(0, 8) + '...',
+                mainTransfer: `${payment.amount} ${payment.token}`,
+                feeTransfer: `${config.cryptonow.feeAmount} ${payment.token}`
             });
 
+            res.json(response);
+
         } catch (error) {
-            console.error('Solana Pay POST error:', error.message);
-            console.error('Stack:', error.stack);
+            console.error('❌ Create transaction error:', error);
             res.status(500).json({
                 error: 'Failed to create transaction'
             });
         }
     }
 
+    /**
+     * Проверяет статус платежа
+     */
     async verifyPayment(req, res) {
         try {
             const { id } = req.params;
-            console.log('Checking payment status for:', id);
+            const { signature } = req.body;
+
+            console.log('🔍 Verifying payment:', { id, signature });
 
             const payment = storageService.getPayment(id);
             if (!payment) {
-                console.log('Payment not found for verification:', id);
                 return res.status(404).json({
                     success: false,
                     error: 'Payment not found'
                 });
             }
 
-            // Если платеж уже подтвержден, возвращаем результат
-            if (payment.signature && payment.status === 'completed') {
-                console.log('Payment already completed:', id, payment.signature);
+            if (payment.status === 'completed') {
                 return res.json({
                     success: true,
+                    status: 'completed',
                     signature: payment.signature,
-                    blockTime: payment.verifiedAt,
-                    status: 'completed'
+                    verifiedAt: payment.verifiedAt
                 });
             }
 
-            // Проверяем блокчейн на предмет входящих транзакций
-            console.log('Scanning blockchain for incoming transactions...');
-            const sinceTime = Math.floor(payment.createdAt.getTime() / 1000);
+            // Проверяем транзакцию в блокчейне
+            if (signature) {
+                const verification = await solanaService.verifyTransaction(signature);
 
-            const blockchainCheck = await solanaService.checkIncomingTransactions(
-                payment.recipient,
-                payment.amount,
-                payment.token,
-                sinceTime
-            );
+                if (verification.success) {
+                    // Обновляем платеж как завершенный используя ВАШ storageService
+                    storageService.updatePaymentStatus(id, 'completed', signature);
 
-            if (blockchainCheck.success) {
-                console.log('✅ Payment found on blockchain:', id, blockchainCheck.signature);
+                    console.log('✅ Payment verified and completed:', id);
 
-                // Обновляем статус платежа
-                storageService.updatePaymentStatus(id, 'completed', blockchainCheck.signature);
-
-                return res.json({
-                    success: true,
-                    signature: blockchainCheck.signature,
-                    blockTime: blockchainCheck.blockTime,
-                    slot: blockchainCheck.slot,
-                    status: 'completed'
-                });
+                    return res.json({
+                        success: true,
+                        status: 'completed',
+                        signature,
+                        blockTime: verification.blockTime,
+                        slot: verification.slot
+                    });
+                }
             }
 
-            // Платеж еще не найден
-            console.log('Payment not found on blockchain yet:', id);
-            return res.json({
+            res.json({
                 success: false,
                 status: payment.status,
                 message: 'Payment not confirmed yet'
             });
 
         } catch (error) {
-            console.error('Verify payment error:', error.message);
+            console.error('❌ Verify payment error:', error);
             res.status(500).json({
                 success: false,
                 error: 'Verification failed'
+            });
+        }
+    }
+
+    /**
+     * Возвращает статус платежа
+     */
+    async getPaymentStatus(req, res) {
+        try {
+            const { id } = req.params;
+
+            const payment = storageService.getPayment(id);
+            if (!payment) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Payment not found'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    id: payment.id,
+                    status: payment.status,
+                    merchant: payment.recipient,
+                    amount: payment.amount,
+                    token: payment.token,
+                    signature: payment.signature,
+                    createdAt: payment.createdAt,
+                    verifiedAt: payment.verifiedAt,
+                    expiresAt: payment.expiresAt
+                }
+            });
+
+        } catch (error) {
+            console.error('❌ Get payment status error:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Internal server error'
             });
         }
     }

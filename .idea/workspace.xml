@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="1250f5e2-051e-4b86-918d-a46d919d5fc8" name="Changes" comment="not work QR">
+      <change beforePath="$PROJECT_DIR$/.env" beforeDir="false" afterPath="$PROJECT_DIR$/.env" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server.js" beforeDir="false" afterPath="$PROJECT_DIR$/server.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/config/index.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/config/index.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/controllers/paymentController.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/controllers/paymentController.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/solanaService.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/solanaService.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/services/storageService.js" beforeDir="false" afterPath="$PROJECT_DIR$/src/services/storageService.js" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;ZapZapDev&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ZapZapDev/CN-Next.git&quot;,
+    &quot;accountId&quot;: &quot;e46da5e5-53c8-4cc9-b406-9c33f11fe5e1&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 7
+}</component>
+  <component name="ProjectId" id="30btLaUcOR4z3Z9So9F7T1Lzsgh" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "git-widget-placeholder": "Rebasing main",
+    "junie.onboarding.icon.badge.shown": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "vue.rearranger.settings.migration": "true"
+  }
+}]]></component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-09060db00ec0-JavaScript-WS-251.26927.40" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="1250f5e2-051e-4b86-918d-a46d919d5fc8" name="Changes" comment="" />
+      <created>1753908044870</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1753908044870</updated>
+      <workItem from="1753908046011" duration="144000" />
+      <workItem from="1754026367802" duration="238000" />
+      <workItem from="1754029731994" duration="4670000" />
+      <workItem from="1754049321166" duration="2852000" />
+      <workItem from="1754129729109" duration="6866000" />
+      <workItem from="1754732840601" duration="3881000" />
+      <workItem from="1754857678338" duration="2862000" />
+      <workItem from="1754900258233" duration="2325000" />
+    </task>
+    <task id="LOCAL-00001" summary="comit">
+      <option name="closed" value="true" />
+      <created>1754029886657</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1754029886657</updated>
+    </task>
+    <task id="LOCAL-00002" summary="comit">
+      <option name="closed" value="true" />
+      <created>1754129786568</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1754129786568</updated>
+    </task>
+    <task id="LOCAL-00003" summary="work">
+      <option name="closed" value="true" />
+      <created>1754175280921</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1754175280921</updated>
+    </task>
+    <task id="LOCAL-00004" summary="not work QR">
+      <option name="closed" value="true" />
+      <created>1754903515617</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1754903515617</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="comit" />
+    <MESSAGE value="work" />
+    <MESSAGE value="not work QR" />
+    <option name="LAST_COMMIT_MESSAGE" value="not work QR" />
+  </component>
+</project>
