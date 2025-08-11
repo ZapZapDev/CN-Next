@@ -1,6 +1,6 @@
 import solanaService from '../services/solanaService.js';
 import qrService from '../services/qrService.js';
-import storageService from '../services/storageService.js'; // Ваш существующий файл
+import storageService from '../services/storageService.js';
 import { config } from '../config/index.js';
 
 class PaymentController {
@@ -50,7 +50,7 @@ class PaymentController {
                 });
             }
 
-            // Создаем платеж используя ВАШ storageService
+            // Создаем платеж используя storageService
             const payment = storageService.createPayment(
                 recipient,
                 paymentAmount,
@@ -59,15 +59,22 @@ class PaymentController {
                 message || `Payment of ${paymentAmount} ${token} with ${config.cryptonow.feeAmount} ${token} CryptoNow fee`
             );
 
-            // Создаем Solana Pay URL
-            const solanaPayUrl = `${config.baseUrl}/api/payment/${payment.id}/transaction`;
+            // ИСПРАВЛЕНИЕ: Создаем правильный Solana Pay URL с префиксом solana:
+            const transactionUrl = `${config.baseUrl}/api/payment/${payment.id}/transaction`;
+            const solanaPayUrl = `solana:${transactionUrl}`;
+
+            // Генерируем QR-код с правильным Solana Pay URL
+            console.log('🎨 Generating QR for URL:', solanaPayUrl);
+            const qrCode = await qrService.generateQR(solanaPayUrl);
 
             console.log('✅ Payment created:', {
                 id: payment.id,
                 recipient: recipient.slice(0, 8) + '...',
                 amount: `${paymentAmount} ${token}`,
                 fee: `${config.cryptonow.feeAmount} ${token}`,
-                url: solanaPayUrl
+                solanaPayUrl: solanaPayUrl,
+                transactionUrl: transactionUrl,
+                qrGenerated: !!qrCode
             });
 
             res.json({
@@ -79,8 +86,9 @@ class PaymentController {
                     token,
                     label: payment.label,
                     message: payment.message,
-                    solana_pay_url: solanaPayUrl,
-                    qr_data: solanaPayUrl,
+                    solana_pay_url: solanaPayUrl, // С префиксом solana:
+                    transaction_url: transactionUrl, // Без префикса для отладки
+                    qr_code: qrCode, // QR-код с правильным Solana Pay URL
                     fee_info: {
                         amount: config.cryptonow.feeAmount,
                         wallet: config.cryptonow.feeWallet,
@@ -202,7 +210,7 @@ class PaymentController {
                 verifySignatures: false
             });
 
-            // Обновляем статус платежа используя ВАШ storageService
+            // Обновляем статус платежа
             storageService.updatePaymentStatus(id, 'pending', account);
 
             const response = {
@@ -261,7 +269,7 @@ class PaymentController {
                 const verification = await solanaService.verifyTransaction(signature);
 
                 if (verification.success) {
-                    // Обновляем платеж как завершенный используя ВАШ storageService
+                    // Обновляем платеж как завершенный
                     storageService.updatePaymentStatus(id, 'completed', signature);
 
                     console.log('✅ Payment verified and completed:', id);
