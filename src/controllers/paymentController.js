@@ -50,7 +50,7 @@ class PaymentController {
                 });
             }
 
-            // Создаем платеж используя storageService
+            // Создаем платеж используя storageService (КАК БЫЛО РАНЬШЕ)
             const payment = storageService.createPayment(
                 recipient,
                 paymentAmount,
@@ -195,7 +195,7 @@ class PaymentController {
                 });
             }
 
-            // Создаем DUAL транзакцию
+            // Создаем DUAL транзакцию (КАК БЫЛО РАНЬШЕ)
             console.log('🔨 Creating DUAL Solana transaction...');
             const transaction = await solanaService.createTransaction(
                 account,
@@ -256,11 +256,13 @@ class PaymentController {
             }
 
             if (payment.status === 'completed') {
+                const dualTransfersCompleted = await checkDualTransfers(payment.signature);
                 return res.json({
                     success: true,
                     status: 'completed',
                     signature: payment.signature,
-                    verifiedAt: payment.verifiedAt
+                    verifiedAt: payment.verifiedAt,
+                    dual_transfers_completed: dualTransfersCompleted
                 });
             }
 
@@ -272,6 +274,9 @@ class PaymentController {
                     // Обновляем платеж как завершенный
                     storageService.updatePaymentStatus(id, 'completed', signature);
 
+                    // Проверяем двойные переводы
+                    const dualTransfersCompleted = await checkDualTransfers(signature);
+
                     console.log('✅ Payment verified and completed:', id);
 
                     return res.json({
@@ -279,7 +284,8 @@ class PaymentController {
                         status: 'completed',
                         signature,
                         blockTime: verification.blockTime,
-                        slot: verification.slot
+                        slot: verification.slot,
+                        dual_transfers_completed: dualTransfersCompleted
                     });
                 }
             }
@@ -300,7 +306,7 @@ class PaymentController {
     }
 
     /**
-     * Возвращает статус платежа
+     * Возвращает статус платежа с проверкой двойных переводов
      */
     async getPaymentStatus(req, res) {
         try {
@@ -314,6 +320,13 @@ class PaymentController {
                 });
             }
 
+            let dualTransfersCompleted = false;
+
+            // Если есть подпись транзакции, проверяем переводы
+            if (payment.signature && payment.status === 'completed') {
+                dualTransfersCompleted = await checkDualTransfers(payment.signature);
+            }
+
             res.json({
                 success: true,
                 data: {
@@ -325,7 +338,8 @@ class PaymentController {
                     signature: payment.signature,
                     createdAt: payment.createdAt,
                     verifiedAt: payment.verifiedAt,
-                    expiresAt: payment.expiresAt
+                    expiresAt: payment.expiresAt,
+                    dual_transfers_completed: dualTransfersCompleted
                 }
             });
 
@@ -336,6 +350,46 @@ class PaymentController {
                 error: 'Internal server error'
             });
         }
+    }
+}
+
+/**
+ * Простая проверка двух переводов
+ */
+async function checkDualTransfers(signature) {
+    try {
+        console.log('🔍 Checking dual transfers for signature:', signature);
+
+        const { Connection } = await import('@solana/web3.js');
+        const connection = new Connection(config.solana.rpcUrl, 'confirmed');
+
+        const txInfo = await connection.getTransaction(signature, {
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0
+        });
+
+        if (!txInfo) {
+            console.log('❌ Transaction not found:', signature);
+            return false;
+        }
+
+        if (txInfo.meta?.err) {
+            console.log('❌ Transaction failed:', txInfo.meta.err);
+            return false;
+        }
+
+        // Проверяем что в транзакции есть минимум 2 инструкции перевода
+        const transferInstructions = txInfo.transaction.message.instructions.length;
+        console.log('📊 Found instructions:', transferInstructions);
+
+        const result = transferInstructions >= 2;
+        console.log('✅ Dual transfers completed:', result);
+
+        return result;
+
+    } catch (error) {
+        console.error('❌ Transfer check error:', error);
+        return false;
     }
 }
 
